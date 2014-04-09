@@ -13,13 +13,13 @@
 class UEP
 {
 
+    private $_base_api_url = "http://api.uafrica.com";
     private $_client_id = null;
     private $_client_secret = null;
     private $_redirect_url = null;
     private $_api_auth_base = null;
     private $_access_token = null;
     private $_uid = null;
-    private $_base_api_url = "http://api.uafrica.com";
 
     public function __construct($client_id = null, $client_secret = null, $redirect_url = null)
     {
