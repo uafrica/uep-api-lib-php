@@ -1,5 +1,15 @@
 <?php
-
+/*
+ * uAfrica.com eCommerce Platform API PHP LIB
+ * ==========================================
+ * A library provided by uAfrica to make API calls
+ * to the uAfrica eCommerce Platform.
+ * 
+ * For more information visit: http://api.uafrica.com
+ * 
+ * 
+ * Last Revision: 9 April 2014
+ */
 class UEP
 {
 
@@ -9,10 +19,14 @@ class UEP
     private $_api_auth_base = null;
     private $_access_token = null;
     private $_uid = null;
+    private $_base_api_url = "http://api.uafrica.com";
 
     public function __construct($client_id = null, $client_secret = null, $redirect_url = null)
     {
-        $this->_api_auth_base = Configure::read("UEP.url") . "/OAuth/";
+        //## Override for UEP internal testing, uncomment the line below to connect to the production api server
+        $this->_base_api_url = Configure::read("UEP.url");
+        
+        $this->_api_auth_base = $this->_base_api_url . "/OAuth/";
 
         $this->_client_id = $client_id;
         $this->_client_secret = $client_secret;
@@ -71,22 +85,13 @@ class UEP
 
         $base_url = $this->_api_auth_base . "token?grant_type=authorization_code&code=" . $code . "&client_id=" . $this->_client_id . "&client_secret=" . $this->_client_secret . "";
 
-        //debug($base_url);
-        //exit();
-
         $response = file_get_contents($base_url);
-
-        //debug($response);
-        //exit();
-
         $response = json_decode($response, true);
-
 
         if (isset($response["access_token"]))
         {
             //## User is authed, need to save access token for future api calls
             $this->_access_token = $response["access_token"];
-
             return $response["access_token"];
         }
         else
@@ -110,9 +115,6 @@ class UEP
 
     public function call($method, $path, $params = array(), $debug = false)
     {
-
-        //echo $method . ":" . $path . "\n";
-
         if ($this->_uid === null)
         {
             throw new Exception("UID is required");
@@ -128,16 +130,20 @@ class UEP
 
         $params["access_token"] = $this->_access_token;
         $params["uid"] = $this->_uid;
-   
-        if ($debug)
-            debug($params);
 
-        $baseurl = Configure::read("UEP.url") . "/1.0/";
+        if ($debug)
+        {
+            $this->debug($params);
+        }
+
+        $baseurl = $this->_base_api_url . "/1.0/";
 
         $url = $baseurl . ltrim($path, '/');
 
         if ($debug)
-            debug($url);
+        {
+            $this->debug($url);
+        }
 
         $query = in_array($method, array('GET', 'DELETE')) ? $params : array();
         //$payload = in_array($method, array('POST', 'PUT')) ? stripslashes(json_encode($params)) : array();
@@ -147,12 +153,10 @@ class UEP
         $request_headers = in_array($method, array('POST', 'PUT')) ? array() : array();
 
         if ($debug)
-            debug($this->_access_token);
+        {
+            $this->debug($this->_access_token);
+        }
 
-        //debug($query);
-        //debug($url);
-        //debug($payload);
-        //$request_headers = array();
         // add auth headers
         $request_headers[] = 'X-UEP-Access-Token: ' . $this->_access_token;
         $request_headers[] = 'X-UEP-Client-ID: ' . $this->_client_id;
@@ -163,11 +167,16 @@ class UEP
         $response = $this->curlHttpApiRequest($method, $url, $query, $payload, $request_headers);
 
         if ($debug)
-            debug($response);
+        {
+            $this->debug($response);
+        }
+
+        if (!$this->isJson($response))
+        {
+            throw new UEPApiException("No valid json received", 500);
+        }
 
         $response = json_decode($response, true);
-
-        //debug($response);
 
         if (isset($response['code']))
         {
@@ -177,16 +186,11 @@ class UEP
             }
         }
 
-
-        //debug($this->last_response_headers['http_status_code']);
-        //debug($response);
-
         if ($this->last_response_headers['http_status_code'] >= 400)
         {
             $error = null;
             if (isset($response['error']) && isset($response['error_description']))
             {
-                //debug("A");
                 throw new UEPApiException($response['error_description'], $this->last_response_headers['http_status_code']);
             }
 
@@ -195,7 +199,6 @@ class UEP
                 throw new UEPApiException($response['name'], $this->last_response_headers['http_status_code']);
             }
         }
-
 
         if (isset($response['errors']) or ($this->last_response_headers['http_status_code'] >= 400))
             throw new UEPApiException($this->last_response_headers['http_status_code'], $response);
@@ -208,23 +211,16 @@ class UEP
     {
         $url = $this->curlAppendQuery($url, $query);
 
-
         $ch = curl_init($url);
-
-        //debug($url);
 
         $request_headers[] = "Expect:";
 
         $this->curlSetopts($ch, $method, $payload, $request_headers);
         $response = curl_exec($ch);
 
-        //debug($response);
-
         $errno = curl_errno($ch);
         $error = curl_error($ch);
         curl_close($ch);
-
-        //debug($error);
 
         if ($errno)
             throw new UEPCurlException($error, $errno);
@@ -257,29 +253,19 @@ class UEP
         curl_setopt($ch, CURLOPT_TIMEOUT, 130);
         //curl_setopt($ch, CURLOPT_POST, TRUE);
         //curl_setopt($ch, CURLOPT_HTTPHEADER, array("Content-Type: application/json; charset=utf-8","Accept:application/json, text/javascript, */*; q=0.01"));
-        //debug($method);
 
         curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $method);
-
-        //debug($request_headers);
 
         if (!empty($request_headers))
             curl_setopt($ch, CURLOPT_HTTPHEADER, $request_headers);
 
         if ($method != 'GET' && !empty($payload))
         {
-            //debug($payload);
-
             if (is_array($payload))
                 $payload = http_build_query($payload);
 
-            //debug($payload);
-            //$payload = "jaco=1";
-
             curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
         }
-
-        //return $ch;
     }
 
     private function curlParseHeaders($message_headers)
@@ -297,6 +283,22 @@ class UEP
         return $headers;
     }
 
+    public function isJson($string)
+    {
+        json_decode($string);
+        return (json_last_error() == JSON_ERROR_NONE);
+    }
+
+    private function debug($expr, $continue = true)
+    {
+        echo "<pre style='padding:10px;background-color:#efefef'>";
+        print_r($expr);
+        echo "</pre>";
+
+        if (!$continue)
+            exit();
+    }
+
 }
 
 class UEPCurlException extends Exception
@@ -306,10 +308,12 @@ class UEPCurlException extends Exception
 
 class UEPApiException extends Exception
 {
+
     function __construct($message, $code)
     {
         parent::__construct($message, $code);
     }
+
 }
 
 ?>
